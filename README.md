@@ -104,7 +104,7 @@
 
 - ✅ 奇书网 (https://www.xqishuta.net)
 - ✅ 笔趣阁 (https://www.bqg683.xyz, https://www.bqg104.cc)
-- ✅ 其他小说网站（自动适配）
+- ✅ 其他大部分小说网站（自动适配）
 
 ## 常见问题
 
