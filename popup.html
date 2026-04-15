@@ -1,0 +1,241 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>小说阅读器</title>
+    <style>
+      body { 
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        margin: 0; 
+        padding: 16px; 
+        width: 280px;
+        background: #f9fafb;
+      }
+      .title { 
+        font-weight: 700; 
+        font-size: 16px; 
+        margin-bottom: 8px; 
+        color: #1f2937;
+      }
+      .desc { 
+        font-size: 14px; 
+        color: #4b5563; 
+        margin-bottom: 16px; 
+      }
+      button { 
+        width: 100%; 
+        padding: 12px;
+        border: 0; 
+        border-radius: 8px; 
+        color: white; 
+        font-weight: 600; 
+        cursor: pointer; 
+        margin-bottom: 10px;
+        transition: all 0.2s ease;
+      }
+      #toggle-reading { 
+        background: linear-gradient(135deg, #4f46e5, #4338ca); 
+      }
+      #toggle-reading:hover { 
+        background: linear-gradient(135deg, #4338ca, #3730a3); 
+        transform: translateY(-1px);
+      }
+      #toggle-reading.reading {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+      }
+      #toggle-scroll { 
+        background: linear-gradient(135deg, #10b981, #059669); 
+      }
+      #toggle-scroll:hover { 
+        background: linear-gradient(135deg, #059669, #047857); 
+        transform: translateY(-1px);
+      }
+      #toggle-scroll.scrolling {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+      }
+      .status { 
+        font-size: 12px; 
+        color: #6b7280; 
+        margin-top: 12px; 
+        text-align: center;
+      }
+      .reading-status {
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        margin-bottom: 12px;
+        text-align: center;
+      }
+      .reading-status.idle {
+        background-color: #f3f4f6;
+        color: #6b7280;
+      }
+      .reading-status.reading {
+        background-color: #dbeafe;
+        color: #1e40af;
+      }
+      .reading-status.scrolling {
+        background-color: #d1fae5;
+        color: #065f46;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="title">小说阅读器</div>
+    <div class="desc">有声阅读和自动翻页功能</div>
+    
+    <div id="reading-status" class="reading-status idle">就绪</div>
+    
+    <button id="toggle-reading">开始朗读</button>
+    <button id="toggle-scroll">开始自动翻页</button>
+    
+    <div class="settings-section">
+      <h4>翻页设置</h4>
+      <div class="setting-item">
+        <label>翻页速度: <span id="scroll-speed-display">50</span> (值越小越快)</label>
+        <input type="range" id="scroll-speed" min="10" max="200" value="50">
+      </div>
+    </div>
+    
+    <div class="test-section">
+      <h4>测试朗读</h4>
+      <textarea id="test-text" placeholder="请输入测试文本..." rows="3"></textarea>
+      <button id="test-reading">测试朗读</button>
+    </div>
+    
+    <div class="status-section">
+      <div id="tts-service-status" class="status info">
+        本地TTS服务: 检查中...
+      </div>
+    </div>
+    
+    <div class="settings-section">
+      <h4>语音设置</h4>
+      <div class="setting-item">
+        <label>语音引擎:</label>
+        <select id="speech-engine">
+          <option value="browser">浏览器内置</option>
+          <option value="openai" selected>OpenAI TTS (开源模型)</option>
+        </select>
+      </div>
+      <div class="setting-item">
+        <label>音色:</label>
+        <select id="voice-select">
+          <option value="alloy">Alloy</option>
+          <option value="echo">Echo</option>
+          <option value="fable">Fable</option>
+          <option value="onyx">Onyx</option>
+          <option value="nova">Nova</option>
+          <option value="shimmer">Shimmer</option>
+        </select>
+      </div>
+      <div class="setting-item">
+        <label>语速: <span id="speed-display">1.0</span></label>
+        <input type="range" id="speech-speed" min="0.5" max="2.0" step="0.1" value="1.0">
+      </div>
+      <div class="setting-item">
+        <label>分割字数: <span id="chunk-size-display">150</span></label>
+        <input type="range" id="chunk-size" min="100" max="300" step="10" value="150">
+      </div>
+    </div>
+    
+    <div class="settings-section">
+      <h4>广告过滤</h4>
+      <div class="setting-item">
+        <label>过滤关键词 (每行一个):</label>
+        <textarea id="filter-keywords" rows="4" placeholder="最新网址&#10;请收藏&#10;记住网址"></textarea>
+      </div>
+      <button id="save-filter-keywords" style="background: linear-gradient(135deg, #6366f1, #4f46e5);">保存过滤关键词</button>
+    </div>
+    
+    <style>
+      .settings-section {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid #e5e7eb;
+      }
+      .settings-section h4 {
+        margin: 0 0 12px 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #374151;
+      }
+      .setting-item {
+        margin-bottom: 12px;
+      }
+      .setting-item label {
+        display: block;
+        font-size: 13px;
+        font-weight: 500;
+        color: #4b5563;
+        margin-bottom: 6px;
+      }
+      select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      input[type="range"] {
+        width: 100%;
+      }
+      .status-section {
+        margin-top: 12px;
+      }
+      .status {
+        padding: 8px;
+        border-radius: 4px;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+      .status.success {
+        background-color: #d1fae5;
+        color: #065f46;
+      }
+      .status.error {
+        background-color: #fee2e2;
+        color: #991b1b;
+      }
+      .status.info {
+        background-color: #dbeafe;
+        color: #1e40af;
+      }
+    </style>
+    
+    <div class="status" id="status">就绪</div>
+    
+    <style>
+      .test-section {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid #e5e7eb;
+      }
+      .test-section h4 {
+        margin: 0 0 8px 0;
+        font-size: 14px;
+        font-weight: 600;
+        color: #374151;
+      }
+      textarea {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+        resize: vertical;
+        margin-bottom: 8px;
+        box-sizing: border-box;
+      }
+      #test-reading {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+      }
+      #test-reading:hover {
+        background: linear-gradient(135deg, #d97706, #b45309);
+        transform: translateY(-1px);
+      }
+    </style>
+    <script src="popup.js"></script>
+  </body>
+</html>

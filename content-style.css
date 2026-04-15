@@ -1,0 +1,169 @@
+/* 小说阅读器控制面板样式 */
+.novel-reader-panel {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 280px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  padding: 16px;
+  z-index: 9999;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.novel-reader-header {
+  margin-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 12px;
+}
+
+.novel-reader-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.novel-reader-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.novel-reader-buttons button {
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#read-aloud {
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  color: white;
+}
+
+#read-aloud:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4338ca, #3730a3);
+  transform: translateY(-1px);
+}
+
+#stop-reading {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+}
+
+#stop-reading:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  transform: translateY(-1px);
+}
+
+#auto-scroll {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
+
+#auto-scroll:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669, #047857);
+  transform: translateY(-1px);
+}
+
+#stop-scroll {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+}
+
+#stop-scroll:hover:not(:disabled) {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.novel-reader-speed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.novel-reader-speed label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  min-width: 80px;
+}
+
+#scroll-speed {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: #e5e7eb;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+#scroll-speed::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #4f46e5;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#scroll-speed::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  background: #4338ca;
+}
+
+#speed-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4f46e5;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .novel-reader-panel {
+    width: 90%;
+    right: 5%;
+    left: 5%;
+  }
+  
+  .novel-reader-buttons {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 朗读位置高亮样式 */
+.novel-reader-highlight {
+  background-color: rgba(255, 255, 0, 0.3);
+  padding: 2px 0;
+  border-radius: 2px;
+  animation: highlight-pulse 2s infinite;
+}
+
+@keyframes highlight-pulse {
+  0% {
+    background-color: rgba(255, 255, 0, 0.3);
+  }
+  50% {
+    background-color: rgba(255, 255, 0, 0.6);
+  }
+  100% {
+    background-color: rgba(255, 255, 0, 0.3);
+  }
+}

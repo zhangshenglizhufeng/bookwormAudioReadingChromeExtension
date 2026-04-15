@@ -1,0 +1,7 @@
+services:
+  local-tts:
+    image: mzzsfy/tts:latest
+    container_name: local-tts
+    ports:
+      - "5050:8080"
+    restart: unless-stopped

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小说阅读器插件测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .test-section {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        h2 {
+            color: #555;
+            margin-top: 0;
+        }
+        .test-content {
+            background-color: white;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <h1>小说阅读器插件测试</h1>
+    
+    <div class="test-section">
+        <h2>测试内容</h2>
+        <div class="test-content" id="test-content">
+            <p>最新网址：www.xqishuta.net</p>
+            <p>"老子也不是吓大的，你敢套路我，禁卫军头领是我兄弟，他定然不会放过你"刘毅道。</p>
+            <p>金诚在他旁边低声道："你用劣质高粱蒸酒，然后卖给禁卫军，那个禁卫军头领得了不少好处吧"。</p>
+            <p>刘毅震惊！这个秘密可没几人知道，瞬间有些懵逼。</p>
+            <p>金诚继续痛打落水狗道："小子，嚣张是要付出代价的，敢把劣质酒卖给禁卫军，你们刘家也是天才，听我的,好好珍惜自己的时光，千万不要荒废了青春啊，因为你没多久青春了，哈哈哈哈"。</p>
+            <p>"你套老子话，我不信！"刘毅此时接近崩溃的边缘，急道。</p>
+            <p>"我套你话干嘛，你不是一口一个兄弟禁卫军头领吗，你信不信，你那本账本一公布，首先倒霉的就是他，他都自身难保，还管得了你"金诚道。</p>
+            <p>"什么账本？"刘毅急道。</p>
+            <p>这个秘密就是只有三四个人知道。</p>
+            <p>"就是放在你抽屉夹缝里的那本账本啊，好难找呢，我们刚才去查房你们的时候，你父亲哭天喊地认错，把账本给了我们"金诚胡言乱语道。</p>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试控制</h2>
+        <button class="button" id="start-reading">开始朗读</button>
+        <button class="button" id="stop-reading">停止朗读</button>
+        <button class="button" id="start-scroll">开始自动翻页</button>
+        <button class="button" id="stop-scroll">停止自动翻页</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>测试状态</h2>
+        <div class="status info" id="status">
+            就绪
+        </div>
+        <div class="status info" id="engine-status">
+            语音引擎：未检测
+        </div>
+    </div>
+    
+    <script>
+        // 模拟插件功能
+        let isReading = false;
+        let isAutoScrolling = false;
+        let autoScrollInterval = null;
+        let speechEngine = 'browser'; // 'browser' 或 'openai'
+        
+        // 状态更新函数
+        function updateStatus(message, type = 'info') {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = message;
+            statusElement.className = `status ${type}`;
+        }
+        
+        // 模拟语音合成
+        function simulateSpeech(text) {
+            console.log(`[${speechEngine}] 朗读: ${text}`);
+            // 模拟语音合成延迟
+            return new Promise(resolve => {
+                setTimeout(resolve, text.length * 50); // 每个字符50ms
+            });
+        }
+        
+        // 开始朗读
+        async function startReading() {
+            if (isReading) return;
+            
+            updateStatus('正在朗读...', 'info');
+            isReading = true;
+            
+            const paragraphs = document.querySelectorAll('#test-content p');
+            
+            for (let i = 0; i < paragraphs.length && isReading; i++) {
+                // 高亮当前段落
+                paragraphs.forEach(p => p.style.backgroundColor = '');
+                paragraphs[i].style.backgroundColor = 'rgba(255, 255, 0, 0.3)';
+                
+                // 朗读当前段落
+                await simulateSpeech(paragraphs[i].textContent);
+            }
+            
+            if (isReading) {
+                updateStatus('朗读完成', 'success');
+                // 重置高亮
+                document.querySelectorAll('#test-content p').forEach(p => p.style.backgroundColor = '');
+            }
+            
+            isReading = false;
+        }
+        
+        // 停止朗读
+        function stopReading() {
+            if (!isReading) return;
+            
+            updateStatus('已停止朗读', 'info');
+            isReading = false;
+            // 重置高亮
+            document.querySelectorAll('#test-content p').forEach(p => p.style.backgroundColor = '');
+        }
+        
+        // 开始自动翻页
+        function startAutoScroll() {
+            if (isAutoScrolling) return;
+            
+            updateStatus('开始自动翻页', 'info');
+            isAutoScrolling = true;
+            
+            autoScrollInterval = setInterval(() => {
+                window.scrollBy(0, 10); // 每次滚动10px
+            }, 50); // 每50ms滚动一次
+        }
+        
+        // 停止自动翻页
+        function stopAutoScroll() {
+            if (!isAutoScrolling) return;
+            
+            updateStatus('已停止自动翻页', 'info');
+            isAutoScrolling = false;
+            clearInterval(autoScrollInterval);
+        }
+        
+        // 测试本地TTS服务
+        async function testLocalTTSService() {
+            updateStatus('测试本地TTS服务...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:5050', {
+                    timeout: 5000
+                });
+                
+                if (response.ok) {
+                    updateStatus('本地TTS服务可用', 'success');
+                    document.getElementById('engine-status').textContent = '语音引擎：本地TTS服务可用';
+                    speechEngine = 'openai';
+                } else {
+                    throw new Error('服务响应错误');
+                }
+            } catch (error) {
+                updateStatus('本地TTS服务不可用，使用浏览器内置语音', 'error');
+                document.getElementById('engine-status').textContent = '语音引擎：浏览器内置';
+                speechEngine = 'browser';
+            }
+        }
+        
+        // 绑定事件
+        document.getElementById('start-reading').addEventListener('click', startReading);
+        document.getElementById('stop-reading').addEventListener('click', stopReading);
+        document.getElementById('start-scroll').addEventListener('click', startAutoScroll);
+        document.getElementById('stop-scroll').addEventListener('click', stopAutoScroll);
+        
+        // 页面加载时测试本地TTS服务
+        window.onload = testLocalTTSService;
+    </script>
+</body>
+</html>
