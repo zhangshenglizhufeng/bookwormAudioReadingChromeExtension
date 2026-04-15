@@ -31,8 +31,8 @@
 
 1. **克隆代码**
    ```bash
-   git clone https://github.com/yourusername/novel-reader-extension.git
-   cd novel-reader-extension
+   git clone https://github.com/zhangshenglizhufeng/bookwormAudioReadingChromeExtension.git
+   cd bookwormAudioReadingChromeExtension
    ```
 
 2. **打开 Chrome 扩展管理页面**
@@ -153,7 +153,7 @@ A: 请在设置中添加具体的广告关键词，每行一个。
 
 - **开发者**：Your Name
 - **邮箱**：your.email@example.com
-- **GitHub**：https://github.com/yourusername
+- **GitHub**：https://github.com/zhangshenglizhufeng
 
 ---
 
