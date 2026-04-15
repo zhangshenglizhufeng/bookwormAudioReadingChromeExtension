@@ -153,7 +153,7 @@ A: 请在设置中添加具体的广告关键词，每行一个。
 
 - **开发者**：Your Name
 - **微信**：ailiaofun
-- **邮箱**：1344164181@qq.com
+- **邮箱**：1354164181@qq.com
 - **GitHub**：https://github.com/zhangshenglizhufeng
 
 ---
