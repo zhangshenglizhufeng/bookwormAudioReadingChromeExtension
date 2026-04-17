@@ -84,14 +84,15 @@ async function checkLocalTTSService() {
 }
 
 // 使用本地TTS服务合成语音
-async function synthesizeSpeech(text, voice = 'alloy', speed = 1.0) {
+async function synthesizeSpeech(text, voice = 'zh-CN-XiaoxiaoNeural', speed = 1.0, pitch = 0, style = '') {
   try {
     console.log('=== 开始合成语音 ===');
     console.log('原始文本:', text);
     console.log('使用音色:', voice);
     console.log('语速:', speed);
+    console.log('音调:', pitch);
+    console.log('风格:', style);
     
-    // 清理文本：移除换行符、制表符，合并多个空格为单个空格，句号换逗号
     const chunk = text
       .replace(/[\r\n\t]+/g, '')
       .replace(/\s+/g, ' ')
@@ -100,18 +101,24 @@ async function synthesizeSpeech(text, voice = 'alloy', speed = 1.0) {
     
     console.log('清理后的文本:', chunk);
     console.log('调用本地TTS服务...');
+    
+    const requestBody = {
+      input: chunk,
+      voice: voice,
+      rate: speed,
+      pitch: pitch
+    };
+    
+    if (style) {
+      requestBody.style = style;
+    }
+    
     const response = await fetch('http://localhost:5050/v1/audio/speech', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: 'tts-1',
-        input: chunk,
-        voice: voice,
-        response_format: 'mp3',
-        speed: speed
-      })
+      body: JSON.stringify(requestBody)
     });
     
     console.log('TTS服务响应状态:', response.status, response.statusText);
@@ -185,16 +192,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // 异步响应
   } else if (message?.type === 'SYNTHESIZE_SPEECH') {
     console.log('处理SYNTHESIZE_SPEECH消息');
-    const { text, voice, speed } = message.payload || {};
+    const { text, voice, speed, pitch, style } = message.payload || {};
     console.log('合成文本:', text?.substring(0, 50) + '...');
-    console.log('使用音色:', voice || 'alloy');
+    console.log('使用音色:', voice || 'zh-CN-XiaoxiaoNeural');
     console.log('语速:', speed || 1.0);
+    console.log('音调:', pitch || 0);
+    console.log('风格:', style || '');
     if (text) {
-      synthesizeSpeech(text, voice || 'alloy', speed || 1.0).then(audioUrl => {
+      synthesizeSpeech(text, voice || 'zh-CN-XiaoxiaoNeural', speed || 1.0, pitch || 0, style || '').then(audioUrl => {
         console.log('SYNTHESIZE_SPEECH响应:', { audioUrl: audioUrl?.substring(0, 50) + '...' });
         sendResponse({ audioUrl });
       });
-      return true; // 异步响应
+      return true;
     } else {
       console.error('SYNTHESIZE_SPEECH消息缺少text参数');
       sendResponse({ audioUrl: null });

@@ -1,6 +1,66 @@
 // 弹出窗口脚本
 
-// 发送消息到内容脚本
+let allVoiceNames = [];
+
+function toVoiceLabel(item) {
+  let s = item.ShortName
+  switch (s) {
+    case "zh-CN-XiaoxiaoNeural": s = "晓晓"; break
+    case "zh-CN-XiaoyiNeural": s = "晓伊"; break
+    case "zh-CN-YunxiNeural": s = "云希"; break
+    case "zh-CN-YunyeNeural": s = "云野"; break
+    case "zh-CN-YunxiaNeural": s = "云霞"; break
+    case "zh-CN-YunyangNeural": s = "云阳"; break
+    case "zh-CN-YunjianNeural": s = "云健"; break
+    case "zh-CN-YunxiaoNeural": s = "云晓"; break
+    case "zh-CN-liaoning-XiaobeiNeural": s = "小贝(辽宁)"; break
+    case "zh-CN-shaanxi-XiaoniNeural": s = "晓妮(陕西)"; break
+  }
+  return (item.Gender === "Male" ? "男)" : "女)") + s
+}
+
+async function fetchVoiceNames() {
+  try {
+    const response = await fetch('http://localhost:5050/api/tts/list');
+    if (response.ok) {
+      allVoiceNames = await response.json();
+      return true;
+    }
+  } catch (error) {
+    console.log('获取音色列表失败:', error);
+  }
+  return false;
+}
+
+function updateVoiceSelect() {
+  const languageSelect = document.getElementById('language-select');
+  const genderSelect = document.getElementById('gender-select');
+  const voiceSelect = document.getElementById('voice-select');
+  
+  const selectedLang = languageSelect.value;
+  const selectedGender = genderSelect.value;
+  
+  const filteredVoices = allVoiceNames.filter(v => 
+    (!selectedLang || v.Locale.startsWith(selectedLang)) &&
+    (!selectedGender || v.Gender === selectedGender)
+  );
+  
+  voiceSelect.innerHTML = '';
+  filteredVoices.forEach(voice => {
+    const option = document.createElement('option');
+    option.value = voice.ShortName;
+    option.textContent = toVoiceLabel(voice);
+    voiceSelect.appendChild(option);
+  });
+  
+  if (filteredVoices.length === 0) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = '暂无音色';
+    voiceSelect.appendChild(option);
+  }
+}
+
 function sendMessageToContentScript(message, callback) {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (tabs.length > 0) {
@@ -18,13 +78,11 @@ function sendMessageToContentScript(message, callback) {
   });
 }
 
-// 更新状态
 function updateStatus(status) {
   document.getElementById('status').textContent = status;
 }
 
-// 更新朗读状态显示
-function updateReadingStatus(isReading, isScrolling) {
+function updateReadingStatus(isReading, isScrolling, hasPausedAudio) {
   const statusDiv = document.getElementById('reading-status');
   const readingButton = document.getElementById('toggle-reading');
   const scrollButton = document.getElementById('toggle-scroll');
@@ -32,8 +90,13 @@ function updateReadingStatus(isReading, isScrolling) {
   if (isReading) {
     statusDiv.textContent = '正在朗读...';
     statusDiv.className = 'reading-status reading';
-    readingButton.textContent = '停止朗读';
+    readingButton.textContent = '暂停朗读';
     readingButton.classList.add('reading');
+  } else if (hasPausedAudio) {
+    statusDiv.textContent = '已暂停';
+    statusDiv.className = 'reading-status idle';
+    readingButton.textContent = '继续朗读';
+    readingButton.classList.remove('reading');
   } else {
     statusDiv.textContent = isScrolling ? '自动翻页中' : '就绪';
     statusDiv.className = isScrolling ? 'reading-status scrolling' : 'reading-status idle';
@@ -50,11 +113,10 @@ function updateReadingStatus(isReading, isScrolling) {
   }
 }
 
-// 从content script获取状态
 function syncState() {
   sendMessageToContentScript({ type: 'GET_STATE' }, (response) => {
     if (response && !response.error) {
-      updateReadingStatus(response.isReading, response.isAutoScrolling);
+      updateReadingStatus(response.isReading, response.isAutoScrolling, response.hasPausedAudio);
       if (response.scrollSpeed) {
         document.getElementById('scroll-speed').value = response.scrollSpeed;
         document.getElementById('scroll-speed-display').textContent = response.scrollSpeed;
@@ -65,25 +127,30 @@ function syncState() {
   });
 }
 
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const toggleReadingButton = document.getElementById('toggle-reading');
   const toggleScrollButton = document.getElementById('toggle-scroll');
   const testReadingButton = document.getElementById('test-reading');
   const testTextArea = document.getElementById('test-text');
   const speechEngineSelect = document.getElementById('speech-engine');
+  const languageSelect = document.getElementById('language-select');
+  const genderSelect = document.getElementById('gender-select');
   const voiceSelect = document.getElementById('voice-select');
+  const styleSelect = document.getElementById('style-select');
   const speechSpeedInput = document.getElementById('speech-speed');
   const speedDisplay = document.getElementById('speed-display');
+  const speechPitchInput = document.getElementById('speech-pitch');
+  const pitchDisplay = document.getElementById('pitch-display');
   const chunkSizeInput = document.getElementById('chunk-size');
   const chunkSizeDisplay = document.getElementById('chunk-size-display');
   const scrollSpeedInput = document.getElementById('scroll-speed');
   const scrollSpeedDisplay = document.getElementById('scroll-speed-display');
   
-  // 同步状态
+  await fetchVoiceNames();
+  updateVoiceSelect();
+  
   syncState();
   
-  // 切换朗读状态
   toggleReadingButton.addEventListener('click', () => {
     sendMessageToContentScript({ type: 'TOGGLE_READING' }, (response) => {
       if (response?.error) {
@@ -96,7 +163,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  // 切换自动翻页状态
   toggleScrollButton.addEventListener('click', () => {
     sendMessageToContentScript({ type: 'TOGGLE_AUTO_SCROLL' }, (response) => {
       if (response?.error) {
@@ -108,7 +174,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  // 测试朗读功能
   testReadingButton.addEventListener('click', async () => {
     console.log('=== 开始测试朗读 ===');
     const testText = testTextArea.value.trim();
@@ -145,10 +210,18 @@ document.addEventListener('DOMContentLoaded', () => {
       updateStatus('使用本地TTS服务朗读...');
       const selectedVoice = voiceSelect.value;
       const selectedSpeed = parseFloat(speechSpeedInput.value);
+      const selectedPitch = parseFloat(speechPitchInput.value);
+      const selectedStyle = styleSelect.value;
       
       chrome.runtime.sendMessage({ 
         type: 'SYNTHESIZE_SPEECH', 
-        payload: { text: testText, voice: selectedVoice, speed: selectedSpeed } 
+        payload: { 
+          text: testText, 
+          voice: selectedVoice, 
+          speed: selectedSpeed,
+          pitch: selectedPitch,
+          style: selectedStyle
+        } 
       }, (response) => {
         const audioUrl = response?.audioUrl;
         if (audioUrl) {
@@ -171,13 +244,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   
-  // 加载保存的设置
-  chrome.storage.local.get(['speechEngine', 'voice', 'speechSpeed', 'chunkSize', 'scrollSpeed', 'filterKeywords'], (result) => {
+  chrome.storage.local.get(['speechEngine', 'language', 'gender', 'voice', 'style', 'speechSpeed', 'speechPitch', 'chunkSize', 'scrollSpeed', 'filterKeywords'], (result) => {
     if (result.speechEngine) speechEngineSelect.value = result.speechEngine;
+    if (result.language) languageSelect.value = result.language;
+    if (result.gender) genderSelect.value = result.gender;
+    updateVoiceSelect();
     if (result.voice) voiceSelect.value = result.voice;
+    if (result.style) styleSelect.value = result.style;
     if (result.speechSpeed) {
       speechSpeedInput.value = result.speechSpeed;
       speedDisplay.textContent = result.speechSpeed;
+    }
+    if (result.speechPitch !== undefined) {
+      speechPitchInput.value = result.speechPitch;
+      pitchDisplay.textContent = result.speechPitch;
     }
     if (result.chunkSize) {
       chunkSizeInput.value = result.chunkSize;
@@ -192,7 +272,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   
-  // 保存过滤关键词
   const saveFilterKeywordsButton = document.getElementById('save-filter-keywords');
   const filterKeywordsTextarea = document.getElementById('filter-keywords');
   
@@ -206,7 +285,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  // 检查本地TTS服务状态
   async function checkLocalTTSService() {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ type: 'CHECK_TTS_SERVICE' }, (response) => {
@@ -215,7 +293,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   
-  // 显示本地TTS服务状态
   async function updateTTSServiceStatus() {
     const isAvailable = await checkLocalTTSService();
     const statusElement = document.getElementById('tts-service-status');
@@ -225,16 +302,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   
-  // 监听语音引擎变化
   speechEngineSelect.addEventListener('change', () => {
     const selectedEngine = speechEngineSelect.value;
     chrome.storage.local.set({ speechEngine: selectedEngine });
     if (selectedEngine === 'openai') updateTTSServiceStatus();
-    updateStatus(`已切换到${selectedEngine === 'browser' ? '浏览器内置' : 'OpenAI TTS'}引擎`);
+    updateStatus(`已切换到${selectedEngine === 'browser' ? '浏览器内置' : 'Azure TTS'}引擎`);
     sendMessageToContentScript({ type: 'SET_SPEECH_ENGINE', payload: { engine: selectedEngine } });
   });
   
-  // 监听音色变化
+  languageSelect.addEventListener('change', () => {
+    const selectedLang = languageSelect.value;
+    chrome.storage.local.set({ language: selectedLang });
+    updateVoiceSelect();
+    const currentVoice = voiceSelect.value;
+    if (currentVoice) {
+      chrome.storage.local.set({ voice: currentVoice });
+      sendMessageToContentScript({ type: 'SET_VOICE', payload: { voice: currentVoice } });
+    }
+    updateStatus(`已切换语言为: ${selectedLang}`);
+  });
+  
+  genderSelect.addEventListener('change', () => {
+    const selectedGender = genderSelect.value;
+    chrome.storage.local.set({ gender: selectedGender });
+    updateVoiceSelect();
+    const currentVoice = voiceSelect.value;
+    if (currentVoice) {
+      chrome.storage.local.set({ voice: currentVoice });
+      sendMessageToContentScript({ type: 'SET_VOICE', payload: { voice: currentVoice } });
+    }
+    updateStatus(`已切换性别为: ${selectedGender || '全部'}`);
+  });
+  
   voiceSelect.addEventListener('change', () => {
     const selectedVoice = voiceSelect.value;
     chrome.storage.local.set({ voice: selectedVoice });
@@ -242,7 +341,13 @@ document.addEventListener('DOMContentLoaded', () => {
     sendMessageToContentScript({ type: 'SET_VOICE', payload: { voice: selectedVoice } });
   });
   
-  // 监听语速变化
+  styleSelect.addEventListener('change', () => {
+    const selectedStyle = styleSelect.value;
+    chrome.storage.local.set({ style: selectedStyle });
+    updateStatus(`已切换语音风格为: ${selectedStyle || '默认'}`);
+    sendMessageToContentScript({ type: 'SET_STYLE', payload: { style: selectedStyle } });
+  });
+  
   speechSpeedInput.addEventListener('input', () => {
     const speed = parseFloat(speechSpeedInput.value);
     speedDisplay.textContent = speed.toFixed(1);
@@ -250,7 +355,13 @@ document.addEventListener('DOMContentLoaded', () => {
     sendMessageToContentScript({ type: 'SET_SPEECH_SPEED', payload: { speed } });
   });
   
-  // 监听分割字数变化
+  speechPitchInput.addEventListener('input', () => {
+    const pitch = parseFloat(speechPitchInput.value);
+    pitchDisplay.textContent = pitch.toFixed(1);
+    chrome.storage.local.set({ speechPitch: pitch });
+    sendMessageToContentScript({ type: 'SET_SPEECH_PITCH', payload: { pitch } });
+  });
+  
   chunkSizeInput.addEventListener('input', () => {
     const size = parseInt(chunkSizeInput.value);
     chunkSizeDisplay.textContent = size;
@@ -258,7 +369,6 @@ document.addEventListener('DOMContentLoaded', () => {
     sendMessageToContentScript({ type: 'SET_CHUNK_SIZE', payload: { chunkSize: size } });
   });
   
-  // 监听翻页速度变化
   scrollSpeedInput.addEventListener('input', () => {
     const speed = parseInt(scrollSpeedInput.value);
     scrollSpeedDisplay.textContent = speed;
@@ -266,6 +376,5 @@ document.addEventListener('DOMContentLoaded', () => {
     sendMessageToContentScript({ type: 'SET_SCROLL_SPEED', payload: { speed } });
   });
   
-  // 页面加载时检查本地TTS服务状态
   updateTTSServiceStatus();
 });

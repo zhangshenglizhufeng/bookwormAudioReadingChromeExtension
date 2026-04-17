@@ -12,8 +12,10 @@
   
   // 全局变量
   let speechEngine = 'openai'; // 'browser' 或 'openai'
-  let voice = 'alloy'; // 默认音色
+  let voice = 'zh-CN-XiaoxiaoNeural'; // 默认音色
   let speechSpeed = 1.0; // 默认语速
+  let speechPitch = 0; // 默认音调
+  let speechStyle = ''; // 默认风格
   let chunkSize = 150;
   let currentAudio = null;
   let isAudioPlaying = false;
@@ -83,7 +85,7 @@
         console.log('发送TTS合成请求，文本长度:', text.length);
         chrome.runtime.sendMessage({ 
           type: 'SYNTHESIZE_SPEECH', 
-          payload: { text, voice, speed: speechSpeed } 
+          payload: { text, voice, speed: speechSpeed, pitch: speechPitch, style: speechStyle } 
         }, (response) => {
           // 重置合成状态
           isSynthesizing = false;
@@ -519,8 +521,14 @@
       return;
     }
     
-    // 停止之前的朗读
-    stopReading();
+    // 如果已经有chunks，说明是暂停后继续
+    if (allChunks.length > 0 && currentChunkIndex < allChunks.length) {
+      console.log('继续朗读当前章节');
+      readNextParagraph();
+      isReading = true;
+      updateUI();
+      return;
+    }
     
     // 尝试提取内容，如果失败则等待重试（SPA网站可能需要等待内容加载）
     let retryCount = 0;
@@ -543,13 +551,9 @@
       return;
     }
     
-    // 只有当currentChunkIndex为0时才重置（第一次开始朗读）
-    // 否则保持当前位置不变，从上次停止的地方继续
-    if (currentChunkIndex === 0 && allChunks.length === 0) {
-      // 重置chunk索引
-      currentChunkIndex = 0;
-      allChunks = [];
-    }
+    // 重置并开始新的朗读
+    currentChunkIndex = 0;
+    allChunks = [];
     
     // 开始分段朗读
     readNextParagraph();
@@ -740,26 +744,31 @@
     }
   }
   
-  // 停止朗读
+  // 停止朗读（暂停）
   function stopReading() {
     if (speechSynth) {
       speechSynth.cancel();
-      currentUtterance = null;
     }
-    // 停止本地TTS服务的音频播放
     if (currentAudio) {
       currentAudio.pause();
-      currentAudio = null;
     }
     isReading = false;
     isAudioPlaying = false;
     isSynthesizing = false;
-    // 重置chunk相关状态
-    allChunks = [];
-    currentChunkIndex = 0;
-    console.log('设置音频播放状态为:', isAudioPlaying);
-    console.log('设置合成状态为:', isSynthesizing);
+    console.log('暂停朗读，当前位置:', currentChunkIndex, '/', allChunks.length);
     updateUI();
+  }
+
+  // 继续朗读
+  function resumeReading() {
+    if (currentAudio) {
+      currentAudio.play();
+      isReading = true;
+      isAudioPlaying = true;
+      updateUI();
+    } else if (currentChunkIndex < allChunks.length) {
+      readNextParagraph();
+    }
   }
   
   // 开始自动翻页
@@ -880,7 +889,7 @@
   function init() {
     // 从存储中读取设置
     console.log('开始从存储中读取设置');
-    chrome.storage.local.get(['speechEngine', 'voice', 'speechSpeed', 'chunkSize', 'scrollSpeed', 'filterKeywords'], (result) => {
+    chrome.storage.local.get(['speechEngine', 'voice', 'speechSpeed', 'speechPitch', 'speechStyle', 'chunkSize', 'scrollSpeed', 'filterKeywords'], (result) => {
       console.log('从存储中读取的设置:', result);
       if (result.speechEngine) {
         speechEngine = result.speechEngine;
@@ -893,6 +902,14 @@
       if (result.speechSpeed) {
         speechSpeed = result.speechSpeed;
         console.log(`从存储中加载语速设置: ${speechSpeed}`);
+      }
+      if (result.speechPitch !== undefined) {
+        speechPitch = result.speechPitch;
+        console.log(`从存储中加载音调设置: ${speechPitch}`);
+      }
+      if (result.speechStyle !== undefined) {
+        speechStyle = result.speechStyle;
+        console.log(`从存储中加载风格设置: ${speechStyle}`);
       }
       if (result.chunkSize) {
         chunkSize = result.chunkSize;
@@ -952,6 +969,10 @@
     if (message?.type === 'TOGGLE_READING') {
       if (isReading) {
         stopReading();
+      } else if (currentAudio) {
+        resumeReading();
+      } else if (currentChunkIndex < allChunks.length) {
+        resumeReading();
       } else {
         startReading();
       }
@@ -981,6 +1002,18 @@
         speechSpeed = newSpeed;
         console.log(`语速已设置为: ${newSpeed}`);
       }
+    } else if (message?.type === 'SET_SPEECH_PITCH') {
+      const { pitch: newPitch } = message.payload || {};
+      if (newPitch !== undefined) {
+        speechPitch = newPitch;
+        console.log(`音调已设置为: ${newPitch}`);
+      }
+    } else if (message?.type === 'SET_STYLE') {
+      const { style: newStyle } = message.payload || {};
+      if (newStyle !== undefined) {
+        speechStyle = newStyle;
+        console.log(`风格已设置为: ${newStyle}`);
+      }
     } else if (message?.type === 'SET_CHUNK_SIZE') {
       const { chunkSize: newChunkSize } = message.payload || {};
       if (newChunkSize) {
@@ -1005,7 +1038,8 @@
         isAutoScrolling,
         scrollSpeed,
         currentChunkIndex,
-        totalChunks: allChunks.length
+        totalChunks: allChunks.length,
+        hasPausedAudio: currentAudio !== null && !isReading
       });
       return true;
     } else if (message?.type === 'START_READING_HERE') {
