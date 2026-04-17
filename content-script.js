@@ -18,6 +18,8 @@
   let speechStyle = ''; // 默认风格
   let chunkSize = 150;
   let currentAudio = null;
+  let preloadedAudio = null;
+  let preloadedChunkIndex = -1;
   let isAudioPlaying = false;
   let consecutiveErrors = 0;
   const MAX_CONSECUTIVE_ERRORS = 3;
@@ -682,65 +684,104 @@
         return;
       }
       
-      isSynthesizing = true;
+      let audio = null;
       
-      try {
-        console.log('开始合成音频，文本:', allChunks[currentChunkIndex].substring(0, 30) + '...');
-        const audio = await synthesizeSpeech(allChunks[currentChunkIndex]);
+      // 检查是否有预加载的音频
+      if (preloadedAudio && preloadedChunkIndex === currentChunkIndex) {
+        console.log('使用预加载的音频：第', currentChunkIndex + 1, '段');
+        audio = preloadedAudio;
+        preloadedAudio = null;
+        preloadedChunkIndex = -1;
+        consecutiveErrors = 0;
+      } else {
+        // 没有预加载，现场合成
+        isSynthesizing = true;
         
-        if (!audio) {
-          console.warn('未获取到音频');
-          isSynthesizing = false;
-          consecutiveErrors++;
+        try {
+          console.log('现场合成音频，文本:', allChunks[currentChunkIndex].substring(0, 30) + '...');
+          const audioUrl = await synthesizeSpeech(allChunks[currentChunkIndex]);
           
-          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-            isReading = false;
-            updateUI();
-            alert('TTS服务异常，请检查本地TTS服务是否正常运行（http://localhost:5050）');
+          if (!audioUrl) {
+            console.warn('未获取到音频');
+            isSynthesizing = false;
+            consecutiveErrors++;
+            
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+              isReading = false;
+              updateUI();
+              alert('TTS服务异常，请检查本地TTS服务是否正常运行（http://localhost:5050）');
+              return;
+            }
+            
+            currentChunkIndex++;
+            setTimeout(() => readNextParagraph(), 100);
             return;
           }
           
+          audio = new Audio(audioUrl);
+          isSynthesizing = false;
+          consecutiveErrors = 0;
+        } catch (error) {
+          console.error('合成失败:', error);
+          isSynthesizing = false;
           currentChunkIndex++;
           setTimeout(() => readNextParagraph(), 100);
           return;
         }
-        
-        isSynthesizing = false;
-        isAudioPlaying = true;
-        consecutiveErrors = 0;
-        console.log('音频开始播放');
-        
-        let hasHandledEnd = false;
-        
-        function handleChunkEnd() {
-          if (hasHandledEnd) return;
-          hasHandledEnd = true;
-          isAudioPlaying = false;
-          currentChunkIndex++;
-          readNextParagraph();
-        }
-        
-        audio.onended = function() {
-          console.log('音频播放结束');
-          handleChunkEnd();
-        };
-        
-        audio.onerror = function(e) {
-          console.error('音频错误:', e);
-          handleChunkEnd();
-        };
-        
-        audio.play().catch(e => {
-          console.error('播放失败:', e);
-          handleChunkEnd();
-        });
-        
-      } catch (error) {
-        console.error('合成失败:', error);
-        isSynthesizing = false;
-        currentChunkIndex++;
-        setTimeout(() => readNextParagraph(), 100);
       }
+      
+      // 播放音频
+      isAudioPlaying = true;
+      console.log('音频开始播放：第', currentChunkIndex + 1, '段');
+      
+      let hasHandledEnd = false;
+      
+      function handleChunkEnd() {
+        if (hasHandledEnd) return;
+        hasHandledEnd = true;
+        isAudioPlaying = false;
+        currentChunkIndex++;
+        readNextParagraph();
+      }
+      
+      audio.onended = function() {
+        console.log('音频播放结束');
+        handleChunkEnd();
+      };
+      
+      audio.onerror = function(e) {
+        console.error('音频错误:', e);
+        handleChunkEnd();
+      };
+      
+      audio.play().catch(e => {
+        console.error('播放失败:', e);
+        handleChunkEnd();
+      });
+      
+      // 预加载下一段
+      preloadNextAudio();
+    }
+  }
+  
+  // 预加载下一段音频
+  async function preloadNextAudio() {
+    const nextChunkIndex = currentChunkIndex + 1;
+    if (nextChunkIndex >= allChunks.length || nextChunkIndex === preloadedChunkIndex) {
+      return;
+    }
+    
+    try {
+      console.log('预加载第', nextChunkIndex + 1, '段音频');
+      const audioUrl = await synthesizeSpeech(allChunks[nextChunkIndex]);
+      if (audioUrl) {
+        const audio = new Audio(audioUrl);
+        preloadedAudio = audio;
+        preloadedChunkIndex = nextChunkIndex;
+        console.log('预加载完成：第', nextChunkIndex + 1, '段');
+      }
+    } catch (error) {
+      console.warn('预加载失败：', error);
     }
   }
   
@@ -752,6 +793,9 @@
     if (currentAudio) {
       currentAudio.pause();
     }
+    // 清除预加载
+    preloadedAudio = null;
+    preloadedChunkIndex = -1;
     isReading = false;
     isAudioPlaying = false;
     isSynthesizing = false;
