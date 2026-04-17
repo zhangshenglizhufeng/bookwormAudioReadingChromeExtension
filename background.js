@@ -133,14 +133,7 @@ async function synthesizeSpeech(text, voice = 'zh-CN-XiaoxiaoNeural', speed = 1.
     const audioBlob = await response.blob();
     console.log('音频数据大小:', audioBlob.size, 'bytes');
     
-    // 将音频数据转换为base64字符串
-    const reader = new FileReader();
-    const audioUrl = await new Promise((resolve) => {
-      reader.onloadend = () => {
-        resolve(reader.result);
-      };
-      reader.readAsDataURL(audioBlob);
-    });
+    const audioUrl = URL.createObjectURL(audioBlob);
     console.log('音频URL生成成功:', audioUrl.substring(0, 50) + '...');
     
     return audioUrl;
