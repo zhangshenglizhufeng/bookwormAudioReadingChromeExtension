@@ -1,5 +1,8 @@
 // 后台脚本，用于处理本地TTS服务的调用
 
+// TTS 服务器配置
+let ttsServerUrl = 'http://localhost:5050';
+
 // 创建右键菜单
 function createContextMenu() {
   console.log('=== 开始创建右键菜单 ===');
@@ -62,7 +65,7 @@ async function checkLocalTTSService() {
   try {
     console.log('开始检查本地TTS服务...');
     // 直接尝试调用TTS服务的API端点
-    const response = await fetch('http://localhost:5050/v1/audio/speech', {
+    const response = await fetch(`${ttsServerUrl}/v1/audio/speech`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -91,35 +94,36 @@ async function synthesizeSpeech(text, voice = 'zh-CN-XiaoxiaoNeural', speed = 1.
     console.log('语速:', speed);
     console.log('音调:', pitch);
     console.log('风格:', style);
-    
+    console.log('TTS服务器:', ttsServerUrl);
+
     const chunk = text
       .replace(/[\r\n\t]+/g, '')
       .replace(/\s+/g, ' ')
       .replace(/[。.]/g, '，')
       .trim();
-    
+
     console.log('清理后的文本:', chunk);
-    console.log('调用本地TTS服务...');
-    
+    console.log('调用TTS服务...');
+
     const requestBody = {
       input: chunk,
       voice: voice,
       rate: speed,
       pitch: pitch
     };
-    
+
     if (style) {
       requestBody.style = style;
     }
-    
-    const response = await fetch('http://localhost:5050/v1/audio/speech', {
+
+    const response = await fetch(`${ttsServerUrl}/v1/audio/speech`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody)
     });
-    
+
     console.log('TTS服务响应状态:', response.status, response.statusText);
     
     if (!response.ok) {
@@ -224,6 +228,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ error: error.message });
       });
     return true;
+  } else if (message?.type === 'SET_TTS_SERVER_URL') {
+    const { url } = message.payload || {};
+    if (url) {
+      ttsServerUrl = url;
+      console.log('TTS服务器地址已更新:', ttsServerUrl);
+      sendResponse({ success: true, url: ttsServerUrl });
+    } else {
+      sendResponse({ error: '缺少URL参数' });
+    }
   } else if (message?.type === 'CREATE_CONTEXT_MENU') {
     console.log('处理CREATE_CONTEXT_MENU消息');
     createContextMenu();
@@ -243,19 +256,20 @@ async function synthesizeSpeechArrayBuffer(text, voice = 'zh-CN-XiaoxiaoNeural',
     console.log('语速:', speed);
     console.log('音调:', pitch);
     console.log('风格:', style);
-    
+    console.log('TTS服务器:', ttsServerUrl);
+
     const requestBody = {
       input: text,
       voice: voice,
       rate: speed,
       pitch: pitch
     };
-    
+
     if (style) {
       requestBody.style = style;
     }
-    
-    const response = await fetch('http://localhost:5050/v1/audio/speech', {
+
+    const response = await fetch(`${ttsServerUrl}/v1/audio/speech`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

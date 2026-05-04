@@ -69,7 +69,19 @@
 
 ## TTS 服务部署
 
-扩展默认使用本地 TTS 服务，需要部署 Azure TTS 开源模型（`mzzsfy/tts`）。
+扩展支持多种 TTS 服务，可根据需求选择：
+
+| 服务 | 适用场景 | 资源占用 | 部署难度 |
+|------|---------|---------|---------|
+| **浏览器内置** | 快速体验 | 无 | 无需部署 |
+| **Azure TTS (本地)** | 本地使用，多音色 | 中等 (~1GB内存) | 简单 |
+| **Piper TTS (远程)** | 低配置服务器，省资源 | 低 (~500MB内存) | 中等 |
+
+---
+
+## 方案一：Azure TTS 本地部署（推荐）
+
+适合本地使用，支持多种音色选择。
 
 ### 前置要求：安装 Docker Desktop（Windows）
 
@@ -181,6 +193,53 @@ docker rm novel-reader-tts
 docker pull mzzsfy/tts:latest
 docker-compose up -d
 ```
+
+---
+
+## 方案二：Piper TTS 远程部署（轻量级）
+
+适合 **2核2G 云服务器** 部署，资源占用极低。
+
+### 特点
+
+- **轻量级**：模型仅 50MB，内存占用 < 500MB
+- **速度快**：CPU 实时合成，无需 GPU
+- **适合低配服务器**：2核2G 即可流畅运行
+
+### 服务器要求
+
+- **CPU**: 2核+
+- **内存**: 2GB+
+- **系统**: CentOS 7 / Ubuntu 18.04+
+- **Docker**: 已安装
+
+### 部署步骤
+
+1. **进入 Piper TTS 目录**
+   ```bash
+   cd piper-tts
+   ```
+
+2. **启动服务**
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **验证部署**
+   ```bash
+   curl http://localhost:5051/health
+   ```
+
+详细部署文档：[piper-tts/README.md](./piper-tts/README.md)
+
+### Chrome 扩展配置
+
+1. 打开扩展设置
+2. 语音引擎选择 **"Piper TTS (远程轻量)"**
+3. 填写服务器地址：`http://你的服务器IP:5051`
+4. 点击"测试连接"验证
+
+---
 
 ## 支持的网站
 

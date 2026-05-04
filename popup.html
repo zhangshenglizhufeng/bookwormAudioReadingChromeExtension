@@ -123,8 +123,14 @@
         <label>语音引擎:</label>
         <select id="speech-engine">
           <option value="browser">浏览器内置</option>
-          <option value="openai" selected>Azure TTS (本地容器)</option>
+          <option value="openai" selected>Azure TTS (本地)</option>
+          <option value="piper">Piper TTS (远程轻量)</option>
         </select>
+      </div>
+      <div class="setting-item" id="tts-server-url-container" style="display:none;">
+        <label>TTS服务器地址:</label>
+        <input type="text" id="tts-server-url" placeholder="http://localhost:5051" value="http://localhost:5051" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;box-sizing:border-box;">
+        <button id="test-tts-server" style="margin-top:8px;background:linear-gradient(135deg, #6366f1, #4f46e5);font-size:12px;padding:8px;">测试连接</button>
       </div>
       <div class="setting-item">
         <label>语言:</label>

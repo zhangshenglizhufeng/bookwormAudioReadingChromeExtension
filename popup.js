@@ -275,7 +275,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
   
-  chrome.storage.local.get(['speechEngine', 'language', 'gender', 'voice', 'style', 'speechSpeed', 'speechPitch', 'chunkSize', 'scrollSpeed', 'filterKeywords', 'preloadEnabled'], (result) => {
+  chrome.storage.local.get(['speechEngine', 'language', 'gender', 'voice', 'style', 'speechSpeed', 'speechPitch', 'chunkSize', 'scrollSpeed', 'filterKeywords', 'preloadEnabled', 'ttsServerUrl'], (result) => {
     if (result.speechEngine) speechEngineSelect.value = result.speechEngine;
     if (result.language) languageSelect.value = result.language;
     if (result.gender) genderSelect.value = result.gender;
@@ -305,6 +305,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       const preloadSwitch = document.getElementById('preload-switch');
       if (preloadSwitch) preloadSwitch.checked = result.preloadEnabled;
     }
+    if (result.ttsServerUrl) {
+      ttsServerUrlInput.value = result.ttsServerUrl;
+    }
+    updateTTSServerUI();
   });
   
   const saveFilterKeywordsButton = document.getElementById('save-filter-keywords');
@@ -337,12 +341,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
   
+  // TTS服务器地址配置
+  const ttsServerUrlContainer = document.getElementById('tts-server-url-container');
+  const ttsServerUrlInput = document.getElementById('tts-server-url');
+  const testTtsServerBtn = document.getElementById('test-tts-server');
+  
+  function updateTTSServerUI() {
+    const engine = speechEngineSelect.value;
+    if (engine === 'piper') {
+      ttsServerUrlContainer.style.display = 'block';
+    } else {
+      ttsServerUrlContainer.style.display = 'none';
+    }
+  }
+  
+  // 测试TTS服务器连接
+  async function testTTSServerConnection() {
+    const url = ttsServerUrlInput.value.trim() || 'http://localhost:5051';
+    updateStatus('正在测试TTS服务器连接...');
+    
+    try {
+      const response = await fetch(`${url}/health`, { method: 'GET', timeout: 5000 });
+      if (response.ok) {
+        const data = await response.json();
+        updateStatus(`TTS服务器连接成功! 状态: ${data.status}`);
+        return true;
+      } else {
+        updateStatus('TTS服务器连接失败: 服务不可用');
+        return false;
+      }
+    } catch (error) {
+      updateStatus(`TTS服务器连接失败: ${error.message}`);
+      return false;
+    }
+  }
+  
+  testTtsServerBtn.addEventListener('click', testTTSServerConnection);
+  
   speechEngineSelect.addEventListener('change', () => {
     const selectedEngine = speechEngineSelect.value;
     chrome.storage.local.set({ speechEngine: selectedEngine });
-    if (selectedEngine === 'openai') updateTTSServiceStatus();
-    updateStatus(`已切换到${selectedEngine === 'browser' ? '浏览器内置' : 'Azure TTS'}引擎`);
+    updateTTSServerUI();
+    
+    if (selectedEngine === 'openai') {
+      updateTTSServiceStatus();
+      updateStatus('已切换到 Azure TTS (本地) 引擎');
+    } else if (selectedEngine === 'piper') {
+      updateStatus('已切换到 Piper TTS (远程轻量) 引擎');
+    } else {
+      updateStatus('已切换到浏览器内置引擎');
+    }
+    
     sendMessageToContentScript({ type: 'SET_SPEECH_ENGINE', payload: { engine: selectedEngine } });
+  });
+  
+  // TTS服务器地址变更
+  ttsServerUrlInput.addEventListener('change', () => {
+    const url = ttsServerUrlInput.value.trim();
+    chrome.storage.local.set({ ttsServerUrl: url });
+    updateStatus(`TTS服务器地址已更新: ${url}`);
+    sendMessageToContentScript({ type: 'SET_TTS_SERVER_URL', payload: { url } });
   });
   
   languageSelect.addEventListener('change', () => {

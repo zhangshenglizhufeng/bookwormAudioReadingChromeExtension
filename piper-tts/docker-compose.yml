@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  piper-tts:
+    build: .
+    image: piper-tts:lightweight
+    container_name: piper-tts-server
+    ports:
+      - "5051:5051"
+    restart: unless-stopped
+    # 资源限制，适合 2核2G 服务器
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5051/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
