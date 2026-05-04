@@ -69,38 +69,118 @@
 
 ## TTS 服务部署
 
-扩展默认使用本地 TTS 服务，需要部署 OpenAI TTS 开源模型。
+扩展默认使用本地 TTS 服务，需要部署 Azure TTS 开源模型（`mzzsfy/tts`）。
 
-### 方法一：使用 Docker 部署（推荐）
+### 前置要求：安装 Docker Desktop（Windows）
 
-1. **安装 Docker**：确保已安装 Docker 和 Docker Compose
+1. **下载 Docker Desktop**
+   - 访问 [Docker 官网](https://www.docker.com/products/docker-desktop/)
+   - 下载 Windows 版本安装包
 
-2. **启动服务**：在扩展目录执行
+2. **安装 Docker Desktop**
+   - 运行下载的安装程序
+   - 按提示完成安装（可能需要重启电脑）
+   - 启动 Docker Desktop，确保左下角显示 "Docker Desktop is running"
+
+3. **验证安装**
    ```bash
-   docker-compose up -d
+   docker --version
+   docker-compose --version
    ```
 
-3. **验证服务**：访问 `http://localhost:5050` 确认服务运行
+### 部署 TTS 服务（mzzsfy/tts 镜像）
 
-### 方法二：手动部署
+本项目使用 `mzzsfy/tts` Docker 镜像，这是一个基于 Microsoft Azure TTS 的开源语音合成服务。
 
-1. **安装 Python**：确保 Python 3.8+ 已安装
+**镜像信息**：
+- **镜像名**：`mzzsfy/tts:latest`
+- **镜像大小**：约 27 MB
+- **服务端口**：5050
+- **基于**：Alpine Linux + Azure TTS SDK
 
-2. **安装依赖**
-   ```bash
-   pip install fastapi uvicorn httpx
-   ```
+#### 方法一：使用 Docker Compose 部署（推荐）
 
-3. **启动服务**：运行 TTS 服务脚本
+项目已包含 `docker-compose.yml` 文件，一键启动：
+
+```bash
+# 在扩展目录执行
+docker-compose up -d
+```
+
+`docker-compose.yml` 内容：
+```yaml
+version: '3.8'
+services:
+  tts:
+    image: mzzsfy/tts:latest
+    container_name: novel-reader-tts
+    ports:
+      - "5050:5050"
+    restart: unless-stopped
+```
+
+#### 方法二：使用 Docker 命令直接运行
+
+```bash
+docker run -d \
+  --name novel-reader-tts \
+  -p 5050:5050 \
+  --restart unless-stopped \
+  mzzsfy/tts:latest
+```
+
+#### 方法三：使用 Docker Desktop GUI
+
+1. 打开 Docker Desktop
+2. 点击顶部搜索框，搜索 `mzzsfy/tts`
+3. 点击 `Pull` 拉取镜像
+4. 点击 `Run`，配置端口映射 `5050:5050`
+5. 点击 `Run` 启动容器
+
+### 验证服务
+
+启动后访问：
+```
+http://localhost:5050
+```
+
+或测试 API：
+```bash
+curl http://localhost:5050/api/tts/list
+```
 
 ### TTS 服务配置
 
 - **服务地址**：`http://localhost:5050`
 - **API 端点**：`/v1/audio/speech`
+- **音色列表**：`/api/tts/list`
 - **支持的引擎**：Microsoft Azure TTS
 - **中文音色**：晓晓、晓伊、云希、云野、云霞、云阳、云健、云晓、小贝(辽宁)、晓妮(陕西)
 - **语音风格**：聊天、平静、开心、悲伤、愤怒、恐惧、不满、严厉、撒娇、温柔
 - **高级功能**：音调调整、语速调整、语言筛选、性别筛选
+
+### 常用 Docker 命令
+
+```bash
+# 查看运行中的容器
+docker ps
+
+# 查看 TTS 服务日志
+docker logs novel-reader-tts
+
+# 停止 TTS 服务
+docker stop novel-reader-tts
+
+# 启动 TTS 服务
+docker start novel-reader-tts
+
+# 删除容器（重新部署时使用）
+docker rm novel-reader-tts
+
+# 更新镜像到最新版本
+docker pull mzzsfy/tts:latest
+docker-compose up -d
+```
 
 ## 支持的网站
 

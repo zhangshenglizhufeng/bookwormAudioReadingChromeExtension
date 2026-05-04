@@ -1,7 +1,8 @@
+version: '3.8'
 services:
-  local-tts:
+  tts:
     image: mzzsfy/tts:latest
-    container_name: local-tts
+    container_name: novel-reader-tts
     ports:
-      - "5050:8080"
+      - "5050:5050"
     restart: unless-stopped
