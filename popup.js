@@ -125,6 +125,37 @@ function syncState() {
       updateReadingStatus(false, false);
     }
   });
+  
+  // 同步预加载状态
+  sendMessageToContentScript({ type: 'GET_PRELOAD_STATE' }, (response) => {
+    if (response && !response.error) {
+      updatePreloadStatus(response);
+    }
+  });
+}
+
+function updatePreloadStatus(state) {
+  const preloadStatus = document.getElementById('preload-status');
+  const preloadSwitch = document.getElementById('preload-switch');
+  const preloadInfo = document.getElementById('preload-info');
+  
+  if (preloadSwitch) {
+    preloadSwitch.checked = state.preloadEnabled;
+  }
+  
+  if (preloadInfo) {
+    let infoText = '';
+    if (state.isPreloading) {
+      infoText = '正在预加载...';
+    } else if (state.hasPreloadedNextChapter) {
+      infoText = `下一章已预加载 | 预缓存: ${state.preloadedChunksCount}个`;
+    } else if (state.preloadedChunksCount > 0) {
+      infoText = `预缓存: ${state.preloadedChunksCount}个`;
+    } else {
+      infoText = '未预加载';
+    }
+    preloadInfo.textContent = infoText;
+  }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -244,7 +275,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
   
-  chrome.storage.local.get(['speechEngine', 'language', 'gender', 'voice', 'style', 'speechSpeed', 'speechPitch', 'chunkSize', 'scrollSpeed', 'filterKeywords'], (result) => {
+  chrome.storage.local.get(['speechEngine', 'language', 'gender', 'voice', 'style', 'speechSpeed', 'speechPitch', 'chunkSize', 'scrollSpeed', 'filterKeywords', 'preloadEnabled'], (result) => {
     if (result.speechEngine) speechEngineSelect.value = result.speechEngine;
     if (result.language) languageSelect.value = result.language;
     if (result.gender) genderSelect.value = result.gender;
@@ -269,6 +300,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (result.filterKeywords && Array.isArray(result.filterKeywords)) {
       document.getElementById('filter-keywords').value = result.filterKeywords.join('\n');
+    }
+    if (result.preloadEnabled !== undefined) {
+      const preloadSwitch = document.getElementById('preload-switch');
+      if (preloadSwitch) preloadSwitch.checked = result.preloadEnabled;
     }
   });
   
@@ -376,5 +411,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     sendMessageToContentScript({ type: 'SET_SCROLL_SPEED', payload: { speed } });
   });
   
+  // 预加载开关
+  const preloadSwitch = document.getElementById('preload-switch');
+  if (preloadSwitch) {
+    preloadSwitch.addEventListener('change', () => {
+      const enabled = preloadSwitch.checked;
+      chrome.storage.local.set({ preloadEnabled: enabled });
+      sendMessageToContentScript({ type: 'SET_PRELOAD_ENABLED', payload: { enabled } });
+      updateStatus(`预加载已${enabled ? '开启' : '关闭'}`);
+    });
+  }
+  
   updateTTSServiceStatus();
+  
+  // 定期更新预加载状态（改为10秒，减少日志刷屏）
+  setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      sendMessageToContentScript({ type: 'GET_PRELOAD_STATE' }, (response) => {
+        if (response && !response.error) {
+          updatePreloadStatus(response);
+        }
+      });
+    }
+  }, 10000);
 });

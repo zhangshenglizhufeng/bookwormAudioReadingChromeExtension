@@ -68,11 +68,10 @@ async function checkLocalTTSService() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'tts-1',
         input: '测试',
-        voice: 'alloy',
-        response_format: 'mp3',
-        speed: 1.0
+        voice: 'zh-CN-XiaoxiaoNeural',
+        rate: 0,
+        pitch: 0
       })
     });
     console.log('本地TTS服务检查结果:', response.ok, response.status);
@@ -124,9 +123,16 @@ async function synthesizeSpeech(text, voice = 'zh-CN-XiaoxiaoNeural', speed = 1.
     console.log('TTS服务响应状态:', response.status, response.statusText);
     
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('TTS服务返回错误:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      let errorMsg = '';
+      const contentType = response.headers.get('Content-Type');
+      if (contentType === 'application/json') {
+        const j = await response.json();
+        errorMsg = j.message || j.error || j.err || JSON.stringify(j);
+      } else {
+        errorMsg = '请求失败: ' + await response.text();
+      }
+      console.error('TTS服务返回错误:', errorMsg);
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorMsg}`);
     }
     
     console.log('TTS服务返回成功，开始处理音频数据...');
@@ -201,6 +207,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.error('SYNTHESIZE_SPEECH消息缺少text参数');
       sendResponse({ audioUrl: null });
     }
+  } else if (message?.type === 'SYNTHESIZE_SPEECH_ARRAYBUFFER') {
+    console.log('处理SYNTHESIZE_SPEECH_ARRAYBUFFER消息');
+    const payload = message.payload || {};
+    console.log('合成文本:', payload.input?.substring(0, 50) + '...');
+    console.log('使用音色:', payload.voice || 'zh-CN-XiaoxiaoNeural');
+    
+    synthesizeSpeechArrayBuffer(payload.input, payload.voice || 'zh-CN-XiaoxiaoNeural', 
+                                payload.rate || 1.0, payload.pitch || 0, payload.style || '')
+      .then(base64 => {
+        console.log('SYNTHESIZE_SPEECH_ARRAYBUFFER响应成功，base64长度:', base64?.length);
+        sendResponse({ audioData: base64 });
+      })
+      .catch(error => {
+        console.error('SYNTHESIZE_SPEECH_ARRAYBUFFER响应失败:', error);
+        sendResponse({ error: error.message });
+      });
+    return true;
   } else if (message?.type === 'CREATE_CONTEXT_MENU') {
     console.log('处理CREATE_CONTEXT_MENU消息');
     createContextMenu();
@@ -210,3 +233,72 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ error: '未知消息类型' });
   }
 });
+
+// 新增：返回ArrayBuffer的TTS合成函数
+async function synthesizeSpeechArrayBuffer(text, voice = 'zh-CN-XiaoxiaoNeural', speed = 1.0, pitch = 0, style = '') {
+  try {
+    console.log('=== 开始合成语音(返回ArrayBuffer) ===');
+    console.log('原始文本:', text);
+    console.log('使用音色:', voice);
+    console.log('语速:', speed);
+    console.log('音调:', pitch);
+    console.log('风格:', style);
+    
+    const requestBody = {
+      input: text,
+      voice: voice,
+      rate: speed,
+      pitch: pitch
+    };
+    
+    if (style) {
+      requestBody.style = style;
+    }
+    
+    const response = await fetch('http://localhost:5050/v1/audio/speech', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+    
+    console.log('TTS服务响应状态:', response.status, response.statusText);
+    
+    if (!response.ok) {
+      let errorMsg = '';
+      const contentType = response.headers.get('Content-Type');
+      if (contentType === 'application/json') {
+        const j = await response.json();
+        errorMsg = j.message || j.error || j.err || JSON.stringify(j);
+      } else {
+        errorMsg = '请求失败: ' + await response.text();
+      }
+      console.error('TTS服务返回错误:', errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    console.log('TTS服务返回成功，开始处理音频数据...');
+    const arrayBuffer = await response.arrayBuffer();
+    console.log('音频数据大小:', arrayBuffer.byteLength, 'bytes');
+    
+    // 将ArrayBuffer转换为base64字符串（chrome.runtime.sendMessage无法正确传输ArrayBuffer）
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    console.log('转换为base64，长度:', base64.length);
+    
+    return base64;
+  } catch (error) {
+    console.error('TTS合成失败:', error);
+    throw error;
+  }
+}
+
+// ArrayBuffer转base64辅助函数
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}

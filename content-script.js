@@ -16,10 +16,8 @@
   let speechSpeed = 1.0; // 默认语速
   let speechPitch = 0; // 默认音调
   let speechStyle = ''; // 默认风格
-  let chunkSize = 150;
+  let chunkSize = 50;
   let currentAudio = null;
-  let preloadedAudio = null;
-  let preloadedChunkIndex = -1;
   let isAudioPlaying = false;
   let consecutiveErrors = 0;
   const MAX_CONSECUTIVE_ERRORS = 3;
@@ -28,9 +26,27 @@
   let allChunks = [];
   let currentChunkIndex = 0;
   
+  // 预加载相关
+  let preloadEnabled = true; // 预加载开关
+  let preloadedNextChapter = null; // 预加载的下一章内容
+  let preloadQueue = []; // 预加载队列
+  let isPreloading = false; // 是否正在预加载
+  let isPreloadingAudio = false; // 是否正在预加载音频
+  const PRELOAD_AHEAD_CHUNKS = 3; // 提前预加载的chunk数量
+  
   // 过滤关键词列表（用户自定义）
   let filterKeywords = [];
-  
+
+  // base64转ArrayBuffer辅助函数
+  function base64ToArrayBuffer(base64) {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
   // 初始化语音合成
   function initSpeechSynthesis() {
     if (speechEngine === 'browser') {
@@ -61,18 +77,13 @@
   let isSynthesizing = false;
   
   // 使用本地TTS服务合成语音
-  async function synthesizeSpeech(text) {
+  async function synthesizeSpeech(text, isPreloading = false) {
     try {
-      if (!chrome.runtime?.id) {
-        console.error('扩展上下文已失效');
-        return null;
-      }
-      
       isSynthesizing = true;
       console.log('设置合成状态为:', isSynthesizing);
       
-      // 停止之前的音频播放
-      if (currentAudio) {
+      // 只有在不是预加载时，才停止之前的音频播放
+      if (!isPreloading && currentAudio) {
         try {
           currentAudio.pause();
           currentAudio.src = ''; // 释放资源
@@ -82,41 +93,70 @@
         currentAudio = null;
       }
       
-      // 通过background script调用本地TTS服务
-      return new Promise((resolve) => {
-        console.log('发送TTS合成请求，文本长度:', text.length);
-        chrome.runtime.sendMessage({ 
-          type: 'SYNTHESIZE_SPEECH', 
-          payload: { text, voice, speed: speechSpeed, pitch: speechPitch, style: speechStyle } 
+      console.log('发送TTS合成请求，文本长度:', text.length);
+      console.log('使用音色:', voice);
+      console.log('语速:', speechSpeed);
+      console.log('音调:', speechPitch);
+      console.log('风格:', speechStyle);
+      
+      const requestBody = {
+        input: text,
+        voice: voice,
+        rate: speechSpeed,
+        pitch: speechPitch
+      };
+      
+      if (speechStyle) {
+        requestBody.style = speechStyle;
+      }
+      
+      // 通过background script代理请求（使用base64传输避免ArrayBuffer序列化问题）
+      const base64Audio = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+          type: 'SYNTHESIZE_SPEECH_ARRAYBUFFER',
+          payload: requestBody
         }, (response) => {
-          // 重置合成状态
-          isSynthesizing = false;
-          console.log('设置合成状态为:', isSynthesizing);
-          
-          // 检查是否有错误
           if (chrome.runtime.lastError) {
             console.error('发送消息失败:', chrome.runtime.lastError);
-            resolve(null);
+            reject(new Error(chrome.runtime.lastError.message));
             return;
           }
           
-          console.log('收到TTS合成响应:', response);
-          const audioUrl = response?.audioUrl;
-          if (audioUrl) {
-            console.log('创建音频对象，URL:', audioUrl.substring(0, 50) + '...');
-            const audio = new Audio(audioUrl);
-            // 存储音频对象以便停止
-            currentAudio = audio;
-            resolve(audio);
+          if (response.error) {
+            console.error('TTS合成失败:', response.error);
+            reject(new Error(response.error));
+            return;
+          }
+          
+          if (response.audioData) {
+            console.log('收到音频数据( base64 )，长度:', response.audioData.length);
+            resolve(response.audioData);
           } else {
-            console.error('TTS合成失败: 未获取到音频URL');
-            resolve(null);
+            console.error('未收到音频数据');
+            reject(new Error('未收到音频数据'));
           }
         });
       });
+      
+      // 将base64转换回ArrayBuffer
+      const arrayBuffer = base64ToArrayBuffer(base64Audio);
+      console.log('base64转换为ArrayBuffer，大小:', arrayBuffer.byteLength, 'bytes');
+      
+      // 将ArrayBuffer转换为Blob
+      const audioBlob = new Blob([arrayBuffer], { type: 'audio/mp3' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      console.log('音频URL生成成功:', audioUrl.substring(0, 50) + '...');
+
+      // 创建Audio对象并返回
+      const audio = new Audio(audioUrl);
+      // 只有在不是预加载时，才设置 currentAudio
+      if (!isPreloading) {
+        currentAudio = audio;
+      }
+      isSynthesizing = false;
+      return audio;
     } catch (error) {
       console.error('TTS合成失败:', error);
-      // 重置合成状态
       isSynthesizing = false;
       console.log('设置合成状态为:', isSynthesizing);
       return null;
@@ -515,6 +555,180 @@
     return false;
   }
   
+  // 预加载下一章内容
+  async function preloadNextChapterContent() {
+    if (!preloadEnabled || isPreloading) return;
+    
+    const nextLink = findChapterLink('next');
+    if (!nextLink) {
+      console.log('未找到下一章链接，无法预加载');
+      return;
+    }
+    
+    isPreloading = true;
+    const nextUrl = nextLink.href || nextLink.href;
+    
+    try {
+      console.log('开始预加载下一章内容:', nextUrl);
+      
+      // 使用 fetch 预加载下一章页面
+      const response = await fetch(nextUrl);
+      const html = await response.text();
+      
+      // 解析 HTML 获取内容
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      // 查找小说内容（复用 extractNovelContent 的逻辑，但操作 doc）
+      const contentSelectors = [
+        '#content', '#chaptercontent', '#ChapterContent', '#chapter-content',
+        '#article', '#BookText', '#booktext', '#txt', '#Text',
+        '.content', '.chapter-content', '.chaptercontent',
+        '.article-content', '.book-content', '.novel-content',
+        '.read-content', '.text-content', '.readerContent',
+        '.bookContent', '.chapterContent', '#txtContent', '#chapter'
+      ];
+      
+      let contentDiv = null;
+      for (const selector of contentSelectors) {
+        const elements = doc.querySelectorAll(selector);
+        for (const el of elements) {
+          const text = el.textContent.trim();
+          if (text.length > 100 && /[，。！？、；：]/.test(text)) {
+            if (!contentDiv || text.length > contentDiv.textContent.length) {
+              contentDiv = el;
+            }
+          }
+        }
+      }
+      
+      if (contentDiv) {
+        const clone = contentDiv.cloneNode(true);
+        clone.querySelectorAll('style, script, noscript, iframe, svg').forEach(el => el.remove());
+        
+        let content = clone.textContent || '';
+        content = content
+          .replace(/\{[^}]*\}/g, '')
+          .replace(/@[a-z\-]+\s+[^\n;]+;?/gi, '')
+          .replace(/[a-z\-]+\s*:\s*[^;]+;/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        // 应用过滤关键词
+        for (const keyword of filterKeywords) {
+          if (keyword) {
+            content = content.split(keyword).join('');
+          }
+        }
+        
+        // 分割成段落
+        const paragraphs = content.split(/[\n\r]+/).filter(p => {
+          const trimmed = p.trim();
+          if (trimmed.length < 5) return false;
+          if (/^[a-zA-Z0-9_\-.:;{}()]+$/.test(trimmed)) return false;
+          if (trimmed.includes('{') || trimmed.includes('}')) return false;
+          if (/^[.#][a-zA-Z]/.test(trimmed)) return false;
+          return true;
+        });
+        
+        // 合并并分割为 chunks
+        const fullText = paragraphs.join(' ');
+        preloadedNextChapter = {
+          url: nextUrl,
+          chunks: splitTextIntoChunks(fullText, chunkSize, 500),
+          paragraphs: paragraphs
+        };
+        
+        console.log('预加载下一章成功，chunks数量:', preloadedNextChapter.chunks.length);
+        
+        // 如果启用了语音引擎，也预合成第一批音频
+        if (speechEngine === 'openai') {
+          preloadNextChapterAudio();
+        }
+      }
+    } catch (error) {
+      console.error('预加载下一章失败:', error);
+    } finally {
+      isPreloading = false;
+    }
+  }
+  
+  // 预合成下一章的前几个音频
+  async function preloadNextChapterAudio() {
+    if (!preloadedNextChapter || speechEngine !== 'openai') return;
+    
+    console.log('开始预合成下一章音频');
+    const chunksToPreload = preloadedNextChapter.chunks.slice(0, 3);
+    
+    for (let i = 0; i < chunksToPreload.length; i++) {
+      const chunk = chunksToPreload[i];
+      try {
+        const audio = await synthesizeSpeech(chunk);
+        if (audio) {
+          // 缓存预合成的音频
+          preloadQueue.push({ chunkIndex: i, audio: audio });
+        }
+      } catch (e) {
+        console.log('预合成第', i, '个chunk失败');
+      }
+      // 简短延迟避免请求过快
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }
+  
+  // 预加载下一部分音频（当前章节未读完时）
+  async function preloadNextAudioChunks() {
+    if (!preloadEnabled || speechEngine !== 'openai') return;
+    if (isSynthesizing) return; // 正在合成时跳过
+    if (isPreloadingAudio) return; // 已经在预加载时跳过
+    isPreloadingAudio = true;
+
+    const chunksToPreload = [];
+    const startIndex = currentChunkIndex + 1;
+    const endIndex = Math.min(startIndex + PRELOAD_AHEAD_CHUNKS, allChunks.length);
+
+    for (let i = startIndex; i < endIndex; i++) {
+      if (!preloadQueue.find(p => p.chunkIndex === i)) {
+        chunksToPreload.push({ index: i, text: allChunks[i] });
+      }
+    }
+
+    if (chunksToPreload.length === 0) {
+      isPreloadingAudio = false;
+      return;
+    }
+
+    console.log('预加载接下来的', chunksToPreload.length, '个音频chunk');
+
+    for (const chunkData of chunksToPreload) {
+      if (isSynthesizing) {
+        break;
+      }
+
+      try {
+        const audio = await synthesizeSpeech(chunkData.text, true);
+        if (audio) {
+          preloadQueue.push({ chunkIndex: chunkData.index, audio: audio });
+        }
+      } catch (e) {
+        console.log('预加载chunk', chunkData.index, '失败');
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    isPreloadingAudio = false;
+  }
+  
+  // 检查是否有预加载的音频
+  function getPreloadedAudio(chunkIndex) {
+    const preloaded = preloadQueue.find(p => p.chunkIndex === chunkIndex);
+    if (preloaded) {
+      preloadQueue = preloadQueue.filter(p => p.chunkIndex !== chunkIndex);
+      return preloaded.audio;
+    }
+    return null;
+  }
+  
   // 开始朗读
   async function startReading() {
     // 检查是否已有朗读在进行
@@ -564,28 +778,51 @@
     updateUI();
   }
   
-  // 按字数分割文本，确保每个chunk以标点符号结尾
-  function splitTextIntoChunks(text, size) {
+  // 按字数分割文本，确保每个chunk以句子结束标点（句号、问号、感叹号、省略号）结尾
+  // size 范围 50-500，优先找句子结束标点，找不到则扩展到最大500
+  function splitTextIntoChunks(text, minSize = 50, maxSize = 500) {
     const chunks = [];
     let i = 0;
-    const punctuation = /[，。！？、；：""''）】》"'）\s]/;
+    // 句子结束标点（优先）
+    const sentenceEndPunctuation = /[。！？…]/;
+    // 其他标点（备选）
+    const otherPunctuation = /[，、；：""''）】》"'）\s]/;
     
     while (i < text.length) {
-      let end = Math.min(i + size, text.length);
+      // 先尝试最小字数
+      let end = Math.min(i + minSize, text.length);
       
-      // 如果不是最后一段，尝试找到标点符号作为结尾
+      // 如果不是最后一段，尝试找到合适的结尾
       if (end < text.length) {
-        // 从end位置向前查找标点符号
-        let foundPunctuation = -1;
-        for (let j = end; j > i; j--) {
-          if (punctuation.test(text[j - 1])) {
-            foundPunctuation = j;
+        // 第一步：在 minSize 到 maxSize 范围内找句子结束标点
+        let foundSentenceEnd = -1;
+        const searchLimit = Math.min(i + maxSize, text.length);
+        
+        for (let j = end; j < searchLimit; j++) {
+          if (sentenceEndPunctuation.test(text[j])) {
+            foundSentenceEnd = j + 1; // 包含标点
             break;
           }
         }
         
-        if (foundPunctuation > i) {
-          end = foundPunctuation;
+        if (foundSentenceEnd > i) {
+          end = foundSentenceEnd;
+        } else {
+          // 第二步：找不到句子结束标点，在 minSize 范围内找其他标点
+          let foundOther = -1;
+          for (let j = Math.min(i + minSize, text.length); j > i; j--) {
+            if (otherPunctuation.test(text[j - 1])) {
+              foundOther = j;
+              break;
+            }
+          }
+          
+          if (foundOther > i) {
+            end = foundOther;
+          } else {
+            // 第三步：连其他标点都找不到，直接截到 maxSize
+            end = searchLimit;
+          }
         }
       }
       
@@ -593,7 +830,6 @@
       const cleanChunk = rawChunk
         .replace(/[\r\n\t]+/g, '')
         .replace(/\s+/g, ' ')
-        .replace(/[。.]/g, '，')
         .trim();
       
       if (cleanChunk) {
@@ -619,10 +855,10 @@
       console.log('合并后的文本长度:', fullText.length);
       
       // 按字数分割，确保以标点符号结尾
-      allChunks = splitTextIntoChunks(fullText, chunkSize);
-      
-      console.log('分割后的chunks数量:', allChunks.length);
-      console.log('前3个chunks:', allChunks.slice(0, 3));
+        allChunks = splitTextIntoChunks(fullText, chunkSize, 500);
+        
+        console.log('分割后的chunks数量:', allChunks.length);
+        console.log('前3个chunks:', allChunks.slice(0, 3));
     }
     
     if (currentChunkIndex >= allChunks.length) {
@@ -686,102 +922,95 @@
       
       let audio = null;
       
-      // 检查是否有预加载的音频
-      if (preloadedAudio && preloadedChunkIndex === currentChunkIndex) {
-        console.log('使用预加载的音频：第', currentChunkIndex + 1, '段');
-        audio = preloadedAudio;
-        preloadedAudio = null;
-        preloadedChunkIndex = -1;
-        consecutiveErrors = 0;
-      } else {
-        // 没有预加载，现场合成
-        isSynthesizing = true;
+      // 现场合成
+      isSynthesizing = true;
+      
+      try {
+        // 优先使用预加载的音频
+        audio = getPreloadedAudio(currentChunkIndex);
         
-        try {
+        if (audio) {
+          console.log('使用预加载的音频，chunk索引:', currentChunkIndex);
+          // 使用预加载的音频时，也要设置为 currentAudio
+          currentAudio = audio;
+        } else {
           console.log('现场合成音频，文本:', allChunks[currentChunkIndex].substring(0, 30) + '...');
-          const audioUrl = await synthesizeSpeech(allChunks[currentChunkIndex]);
+          audio = await synthesizeSpeech(allChunks[currentChunkIndex]);
+        }
+        
+        if (!audio) {
+          console.warn('未获取到音频');
+          isSynthesizing = false;
+          consecutiveErrors++;
           
-          if (!audioUrl) {
-            console.warn('未获取到音频');
-            isSynthesizing = false;
-            consecutiveErrors++;
-            
-            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-              isReading = false;
-              updateUI();
-              alert('TTS服务异常，请检查本地TTS服务是否正常运行（http://localhost:5050）');
-              return;
-            }
-            
-            currentChunkIndex++;
-            setTimeout(() => readNextParagraph(), 100);
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            isReading = false;
+            updateUI();
+            alert('TTS服务异常，请检查本地TTS服务是否正常运行（http://localhost:5050）');
             return;
           }
           
-          audio = new Audio(audioUrl);
-          isSynthesizing = false;
-          consecutiveErrors = 0;
-        } catch (error) {
-          console.error('合成失败:', error);
-          isSynthesizing = false;
           currentChunkIndex++;
           setTimeout(() => readNextParagraph(), 100);
           return;
         }
+        
+        isSynthesizing = false;
+        consecutiveErrors = 0;
+      } catch (error) {
+        console.error('合成失败:', error);
+        isSynthesizing = false;
+        currentChunkIndex++;
+        setTimeout(() => readNextParagraph(), 100);
+        return;
       }
       
+      // 先预加载下一段音频
+      if (preloadEnabled && speechEngine === 'openai') {
+        preloadNextAudioChunks();
+      }
+
       // 播放音频
       isAudioPlaying = true;
       console.log('音频开始播放：第', currentChunkIndex + 1, '段');
-      
+
       let hasHandledEnd = false;
-      
+
       function handleChunkEnd() {
         if (hasHandledEnd) return;
         hasHandledEnd = true;
         isAudioPlaying = false;
-        currentChunkIndex++;
+        isSynthesizing = false;
+        audio.onerror = null;
+        audio.onended = null;
         readNextParagraph();
       }
-      
+
       audio.onended = function() {
         console.log('音频播放结束');
+
+        // 如果快读完了，开始预加载下一章
+        if (currentChunkIndex >= allChunks.length - 5 && preloadEnabled) {
+          preloadNextChapterContent();
+        }
+
+        currentChunkIndex++;
         handleChunkEnd();
       };
-      
+
       audio.onerror = function(e) {
         console.error('音频错误:', e);
+        console.error('错误详情:', e.target?.error);
+        console.error('当前chunk索引:', currentChunkIndex, '/', allChunks.length);
+        console.error('音频src:', audio.src?.substring(0, 100));
         handleChunkEnd();
       };
-      
+
+      // 直接播放音频（预加载的音频已经准备好，不需要等待）
       audio.play().catch(e => {
         console.error('播放失败:', e);
         handleChunkEnd();
       });
-      
-      // 预加载下一段
-      preloadNextAudio();
-    }
-  }
-  
-  // 预加载下一段音频
-  async function preloadNextAudio() {
-    const nextChunkIndex = currentChunkIndex + 1;
-    if (nextChunkIndex >= allChunks.length || nextChunkIndex === preloadedChunkIndex) {
-      return;
-    }
-    
-    try {
-      console.log('预加载第', nextChunkIndex + 1, '段音频');
-      const audioUrl = await synthesizeSpeech(allChunks[nextChunkIndex]);
-      if (audioUrl) {
-        const audio = new Audio(audioUrl);
-        preloadedAudio = audio;
-        preloadedChunkIndex = nextChunkIndex;
-        console.log('预加载完成：第', nextChunkIndex + 1, '段');
-      }
-    } catch (error) {
-      console.warn('预加载失败：', error);
     }
   }
   
@@ -793,12 +1022,11 @@
     if (currentAudio) {
       currentAudio.pause();
     }
-    // 清除预加载
-    preloadedAudio = null;
-    preloadedChunkIndex = -1;
     isReading = false;
     isAudioPlaying = false;
     isSynthesizing = false;
+    isPreloadingAudio = false;
+    preloadQueue = [];
     console.log('暂停朗读，当前位置:', currentChunkIndex, '/', allChunks.length);
     updateUI();
   }
@@ -891,17 +1119,17 @@
         console.log('截取后的文本前200字符:', textFromSelection.substring(0, 200));
         
         // 只分割从选择位置开始的文本
-        allChunks = splitTextIntoChunks(textFromSelection, chunkSize);
+        allChunks = splitTextIntoChunks(textFromSelection, chunkSize, 500);
         
         targetChunkIndex = 0;
         console.log('从选择位置开始分割，chunks数量:', allChunks.length);
         console.log('第一个chunk:', allChunks[0]);
       } else {
         console.log('未找到选择文本，使用完整文本');
-        allChunks = splitTextIntoChunks(fullText, chunkSize);
+        allChunks = splitTextIntoChunks(fullText, chunkSize, 500);
       }
     } else {
-      allChunks = splitTextIntoChunks(fullText, chunkSize);
+      allChunks = splitTextIntoChunks(fullText, chunkSize, 500);
     }
     
     // 设置当前chunk索引
@@ -912,6 +1140,17 @@
     console.log('开始朗读');
     readNextParagraph();
     isReading = true;
+    
+    // 开始预加载下一部分音频
+    if (preloadEnabled && speechEngine === 'openai') {
+      setTimeout(() => preloadNextAudioChunks(), 100);
+    }
+    
+    // 预加载下一章
+    if (preloadEnabled) {
+      setTimeout(() => preloadNextChapterContent(), 2000);
+    }
+    
     updateUI();
   }
   
@@ -969,6 +1208,12 @@
         console.log(`从存储中加载过滤关键词:`, result.filterKeywords);
       }
       
+      // 加载预加载设置
+      if (result.preloadEnabled !== undefined) {
+        preloadEnabled = result.preloadEnabled;
+        console.log(`从存储中加载预加载设置: ${preloadEnabled}`);
+      }
+      
       // 初始化语音合成
       initSpeechSynthesis();
       
@@ -1000,6 +1245,10 @@
       paragraphs = [];
       allChunks = [];
       currentChunkIndex = 0;
+      // 重置预加载状态
+      preloadedNextChapter = null;
+      preloadQueue = [];
+      isPreloading = false;
     });
   }
   
@@ -1093,6 +1342,25 @@
       console.log('选择的文本:', selectionText);
       // 即使没有点击位置，也可以使用选择的文本开始朗读
       startReadingFromPosition(clickX, clickY, selectionText);
+    } else if (message?.type === 'SET_PRELOAD_ENABLED') {
+      const { enabled } = message.payload || {};
+      if (enabled !== undefined) {
+        preloadEnabled = enabled;
+        console.log(`预加载功能已${enabled ? '开启' : '关闭'}`);
+        if (!enabled) {
+          // 关闭时清空预加载
+          preloadedNextChapter = null;
+          preloadQueue = [];
+        }
+      }
+    } else if (message?.type === 'GET_PRELOAD_STATE') {
+      sendResponse({
+        preloadEnabled,
+        hasPreloadedNextChapter: preloadedNextChapter !== null,
+        preloadedChunksCount: preloadQueue.length,
+        isPreloading: isPreloadingAudio
+      });
+      return true;
     }
     
     sendResponse({ success: true });
